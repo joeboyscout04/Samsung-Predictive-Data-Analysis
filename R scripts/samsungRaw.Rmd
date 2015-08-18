@@ -1,0 +1,234 @@
+Samsung Data Prediction
+========================================================
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring web pages (click the **MD** toolbar button for help on Markdown).
+
+When you click the **Knit HTML** button a web page will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+### Load libraries
+```{r}
+library(tree)
+library(randomForest)
+
+```
+----
+####Data Processing
+
+Download the data, and read it into R. 
+```{r setdir,cache=TRUE}
+
+root<-"C:/Users/Joseph/Documents/My Dropbox/"
+method<-NULL
+#use for mac.
+root<-"/Users/josephelliott/Dropbox/"
+#method<-"curl"
+setwd(paste0(root,"Data Analysis/Assignments/Assignment2/Data"))
+getwd()
+
+```
+
+``` {r downloadData }
+download.file("https://spark-public.s3.amazonaws.com/dataanalysis/samsungData.rda",destfile="samsungData.rda",method=method)
+dateDownloaded <- date()
+dateDownloaded
+
+```
+
+``` {r loadData, dependson="setdir"}
+parDefault<-par()
+load("samsungData.rda")
+
+
+```
+
+###Let's create a cleaned data set.
+###make some things into factor variables
+```{r}
+samsungData$activity<-as.factor(samsungData$activity)
+samsungData$subject<-as.factor(samsungData$subject)
+
+data<-data.frame(samsungData)
+sub1<-gsub("\\.\\.\\.|\\.\\.","\\.", names(data))
+sub2<-gsub("\\.$","",sub1)
+names(samsungData)<-sub2
+
+save(samsungData,dateDownloaded,file="samsungClean.rda")
+
+```
+
+```{r loadCleanData}
+parDefault<-par()
+load("samsungClean.rda")
+```
+
+### Look at the data set
+
+```{r, dependson="loadData"}
+dim(samsungData) #look at size
+names(samsungData) #look at variable names
+head(samsungData)  #a quick glance at raw data
+summary(samsungData) #a summary 
+sapply(samsungData[1,],class) #what type of variables here (char, int, numeric, factor?)
+```
+
+### Find out about missing values
+```{r, dependson="loadData"}
+sum(is.na(samsungData))
+```
+
+##Split data into test and training sets
+```{r splitData}
+
+#split out the test dataset. 
+samsungTest<-samsungData[samsungData$subject == c(27,28,29,30),]
+
+#and training data set. 
+samsungTrain<-samsungData[as.numeric(as.character(samsungData$subject)) < 27,]
+
+```
+
+##I doubt that this is anything linear, since we are predicting a factor variable.  Trees is probably the best approach. 
+
+
+```{r}
+tree1<-tree(activity~.-activity - subject, data=samsungTrain)
+par(cex=0.5)
+plot(cv.tree(tree1,FUN=prune.tree,method="misclass"))
+plot(cv.tree(tree1))
+pruneTree<-prune.tree(tree1, best=8)
+plot(pruneTree)
+text(pruneTree)
+```
+
+#Determine the error rate
+```{r}
+#see resubstitution error
+trainPrediction<-predict(pruneTree,newdata=samsungTrain,type="class")
+table(samsungTrain$activity,trainPrediction)
+#error rate
+trainPredCorrect<-rep(NA,dim(samsungTrain)[1])
+for(i in 1:dim(samsungTrain)[1]) {
+  if(samsungTrain$activity[i] != trainPrediction[i]) {
+    trainPredCorrect[i]<-FALSE
+  }
+  else{
+    trainPredCorrect[i]<-TRUE
+  }
+}
+#count the number of FALSE which are errors
+  trainErrorSubset<-subset(trainPredCorrect,trainPredCorrect==FALSE)
+  trainErrorRate<-length(trainErrorSubset)/length(trainPredCorrect)
+  trainPredictionRate<-1-trainErrorRate
+  print(paste0(trainPredictionRate*100,"%"))
+```
+
+#Now predict on the test set
+```{r}
+testPrediction<-predict(pruneTree,newdata=samsungTest,type="class")
+table(samsungTest$activity,testPrediction)
+#error rate
+testPredCorrect<-rep(NA,dim(samsungTest)[1])
+for(i in 1:dim(samsungTest)[1]) {
+  if(samsungTest$activity[i] != testPrediction[i]) {
+    testPredCorrect[i]<-FALSE
+  }
+  else{
+    testPredCorrect[i]<-TRUE
+  }
+}
+#count the number of FALSE which are errors
+testErrorSubset<-subset(testPredCorrect,testPredCorrect==FALSE)
+testErrorRate<-length(testErrorSubset)/length(testPredCorrect)
+testPredictionRate<-1-testErrorRate
+print(paste0(testPredictionRate*100,"%"))
+
+```
+
+#now try using random forests
+```{r}
+forest1<-randomForest(activity~.-activity - subject, data=samsungTrain, prox=TRUE)
+summary(forest1)
+forest1
+
+
+
+```
+
+#new predictions
+#Determine the error rate
+```{r}
+#see resubstitution error
+trainPrediction<-predict(forest1,newdata=samsungTrain,type="class")
+table(samsungTrain$activity,trainPrediction)
+#error rate
+trainPredCorrect<-rep(NA,dim(samsungTrain)[1])
+for(i in 1:dim(samsungTrain)[1]) {
+  if(samsungTrain$activity[i] != trainPrediction[i]) {
+    trainPredCorrect[i]<-FALSE
+  }
+  else{
+    trainPredCorrect[i]<-TRUE
+  }
+}
+#count the number of FALSE which are errors
+  trainErrorSubset<-subset(trainPredCorrect,trainPredCorrect==FALSE)
+  trainErrorRate<-length(trainErrorSubset)/length(trainPredCorrect)
+  trainPredictionRate<-1-trainErrorRate
+  print(paste0(trainPredictionRate*100,"%"))
+```
+
+#Now predict on the test set
+```{r}
+testPrediction<-predict(forest1,newdata=samsungTest,type="class")
+table(samsungTest$activity,testPrediction)
+#error rate
+testPredCorrect<-rep(NA,dim(samsungTest)[1])
+for(i in 1:dim(samsungTest)[1]) {
+  if(samsungTest$activity[i] != testPrediction[i]) {
+    testPredCorrect[i]<-FALSE
+  }
+  else{
+    testPredCorrect[i]<-TRUE
+  }
+}
+#count the number of FALSE which are errors
+testErrorSubset<-subset(testPredCorrect,testPredCorrect==FALSE)
+testErrorRate<-length(testErrorSubset)/length(testPredCorrect)
+testPredictionRate<-1-testErrorRate
+print(paste0(testPredictionRate*100,"%"))
+
+```
+
+```{r}
+importance<-importance(forest1)
+top14<-importance[order(-importance[,1]),][1:14]
+par(cex=0.6)
+nameVectorRaw<-row.names(data.frame(top14))
+nameVector<-c("Gravity Acc energy X(t)","Gravity Acc min X(t),
+              Gravity Acc mean X(t)","Angle Gravity mean Y",
+              "Gravity Acc mean Y(t)","Gravity Acc max Y(t)",
+              "Angle Gravity mean X","Gravity Acc min Y(t)",
+              "Gravity Acc max X(t)","Gravity Acc energy Y(t)",
+              "Body Acc Jerk bandsEnergy 1-16 (f)","Gravity Acc max Z(t)",
+              "Gravity Acc mean Z(t)","Body Acc max X(t)")
+varImpPlot(forest1, n.var=14, labels=nameVector, pch=19, main="Random Forest Variables by Importance")
+plot(margin(forest1))
+```
+
+
+#plot creation
+```{r}
+#just showing how many things were correctly predicted with jitter. 
+plot(jitter(as.numeric(samsungTest$activity)), jitter(as.numeric(testPrediction)),pch=19, col=as.numeric(samsungTest$activity))
+
+```
+
+```{r}
+samsung.ord<-samsungTest[order(samsungTest$activity),]
+samsungTestImportant<-subset(samsung.ord, select=c(nameVectorRaw,"activity"))
+
+heatmap.2(t(samsungTestImportant[,-15]),col=bluered(200),key=TRUE,trace="none",density.info="none",keysize=1,scale="row",Colv=NA,cexRow=1,ColSideColors=c("gray80","gray70","gray60","gray50","gray40","gray30")[unclass(factor(samsungTestImportant$activity))])
+
+
+```
+
